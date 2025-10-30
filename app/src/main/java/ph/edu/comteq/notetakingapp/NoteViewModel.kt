@@ -91,4 +91,25 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     fun getNotesWithTag(tagId: Int): Flow<List<Note>> {
         return noteDao.getNotesWithTag(tagId)
     }
+
+    fun addNoteWithTags(
+        title: String,
+        content: String,
+        category: String,
+        selectedTagNames: List<String>
+    ) = viewModelScope.launch {
+        val noteId = noteDao.insertNote(
+            Note(
+                title = title,
+                content = content,
+                category = category
+            )
+        ).toInt()
+
+        for (name in selectedTagNames.distinct()) {
+            val existing = noteDao.getTagByName(name)
+            val tagId = if (existing != null) existing.id else noteDao.insertTag(Tag(name = name)).toInt()
+            noteDao.insertNoteTagCrossRef(NoteTagCrossRef(noteId = noteId, tagId = tagId))
+        }
+    }
 }

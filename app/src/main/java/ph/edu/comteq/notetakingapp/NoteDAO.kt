@@ -54,6 +54,9 @@ interface NoteDAO {
     @Query("SELECT * FROM tags WHERE id = :id")
     suspend fun getTagById(id: Int): Tag?
 
+    @Query("SELECT * FROM tags WHERE name = :name LIMIT 1")
+    suspend fun getTagByName(name: String): Tag?
+
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertNoteTagCrossRef(crossRef: NoteTagCrossRef)

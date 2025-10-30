@@ -23,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -50,7 +51,8 @@ class MainActivity : ComponentActivity() {
 fun NoteApp(viewModel: NoteViewModel) {
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
-    val notes by viewModel.allNotes.collectAsState(initial = emptyList())
+    val notesWithTags by viewModel.allNotesWithTags.collectAsState(initial = emptyList())
+    var showAddDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -115,7 +117,7 @@ fun NoteApp(viewModel: NoteViewModel) {
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(16.dp)
                     ) {
-                        if (notes.isEmpty()) {
+                        if (notesWithTags.isEmpty()) {
                             item {
                                 Text(
                                     text = "No notes found",
@@ -125,8 +127,8 @@ fun NoteApp(viewModel: NoteViewModel) {
                                 )
                             }
                         } else {
-                            items(notes) { note ->
-                                NoteCard(note = note)
+                            items(notesWithTags) { noteWithTags ->
+                                NoteCard(note = noteWithTags.note, tags = noteWithTags.tags)
                             }
                         }
                     }
@@ -145,7 +147,7 @@ fun NoteApp(viewModel: NoteViewModel) {
             }
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { }) {
+            FloatingActionButton(onClick = { showAddDialog = true }) {
                 Icon(Icons.Filled.Add, contentDescription = "Add note")
             }
         }
@@ -156,17 +158,138 @@ fun NoteApp(viewModel: NoteViewModel) {
                 modifier = Modifier.padding(innerPadding)
             )
         }
+
+        if (showAddDialog) {
+            AddNoteDialog(
+                viewModel = viewModel,
+                onDismiss = { showAddDialog = false },
+                onSaved = { showAddDialog = false }
+            )
+        }
     }
 }
 
 @Composable
 fun NoteListScreen(viewModel: NoteViewModel, modifier: Modifier = Modifier) {
-    val notes by viewModel.allNotes.collectAsState(initial = emptyList())
+    val notesWithTags by viewModel.allNotesWithTags.collectAsState(initial = emptyList())
     LazyColumn(modifier = modifier) {
-        items(notes) { note ->
-            NoteCard(note = note)
+        items(notesWithTags) { noteWithTags ->
+            NoteCard(note = noteWithTags.note, tags = noteWithTags.tags)
         }
     }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun AddNoteDialog(
+    viewModel: NoteViewModel,
+    onDismiss: () -> Unit,
+    onSaved: () -> Unit
+) {
+    var title by remember { mutableStateOf("") }
+    var content by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf("") }
+    val allTags by viewModel.allTags.collectAsState(initial = emptyList())
+    var newTagText by remember { mutableStateOf(TextFieldValue("")) }
+    var selectedTagNames by remember { mutableStateOf(setOf<String>()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            val canSave = title.isNotBlank()
+            TextButton(
+                onClick = {
+                    viewModel.addNoteWithTags(
+                        title = title.trim(),
+                        content = content.trim(),
+                        category = category.trim(),
+                        selectedTagNames = selectedTagNames.toList()
+                    )
+                    onSaved()
+                },
+                enabled = canSave
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+        title = { Text("Add Note") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Title") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = content,
+                    onValueChange = { content = it },
+                    label = { Text("Content") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3
+                )
+                OutlinedTextField(
+                    value = category,
+                    onValueChange = { category = it },
+                    label = { Text("Category") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                Column {
+                    Text("Tags", style = MaterialTheme.typography.labelLarge)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        allTags.forEach { tag ->
+                            val selected = selectedTagNames.contains(tag.name)
+                            FilterChip(
+                                selected = selected,
+                                onClick = {
+                                    selectedTagNames = if (selected) selectedTagNames - tag.name else selectedTagNames + tag.name
+                                },
+                                label = { Text(tag.name) }
+                            )
+                        }
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = newTagText,
+                            onValueChange = { newTagText = it },
+                            label = { Text("New tag") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Button(
+                            onClick = {
+                                val name = newTagText.text.trim()
+                                if (name.isNotEmpty()) {
+                                    selectedTagNames = selectedTagNames + name
+                                    newTagText = TextFieldValue("")
+                                }
+                            }
+                        ) { Text("Add") }
+                    }
+                    if (selectedTagNames.isNotEmpty()) {
+                        FlowRow(
+                            modifier = Modifier.padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            selectedTagNames.forEach { name ->
+                                TagChip(
+                                    tag = Tag(name = name),
+                                    onRemove = { selectedTagNames = selectedTagNames - name }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)
