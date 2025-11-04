@@ -53,6 +53,12 @@ fun NoteApp(viewModel: NoteViewModel) {
     var isSearchActive by remember { mutableStateOf(false) }
     val notesWithTags by viewModel.allNotesWithTags.collectAsState(initial = emptyList())
     var showAddDialog by remember { mutableStateOf(false) }
+    var noteToEdit by remember { mutableStateOf<NoteWithTags?>(null) }
+
+    val onNoteClick: (NoteWithTags) -> Unit = { noteWithTags ->
+        noteToEdit = noteWithTags
+        showAddDialog = true
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -128,7 +134,11 @@ fun NoteApp(viewModel: NoteViewModel) {
                             }
                         } else {
                             items(notesWithTags) { noteWithTags ->
-                                NoteCard(note = noteWithTags.note, tags = noteWithTags.tags)
+                                NoteCard(
+                                    note = noteWithTags.note, 
+                                    tags = noteWithTags.tags,
+                                    onClick = { onNoteClick(noteWithTags) }
+                                )
                             }
                         }
                     }
@@ -147,7 +157,10 @@ fun NoteApp(viewModel: NoteViewModel) {
             }
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }) {
+            FloatingActionButton(onClick = { 
+                noteToEdit = null
+                showAddDialog = true 
+            }) {
                 Icon(Icons.Filled.Add, contentDescription = "Add note")
             }
         }
@@ -155,26 +168,42 @@ fun NoteApp(viewModel: NoteViewModel) {
         if (!isSearchActive) {
             NoteListScreen(
                 viewModel = viewModel,
-                modifier = Modifier.padding(innerPadding)
+                modifier = Modifier.padding(innerPadding),
+                onNoteClick = onNoteClick
             )
         }
 
         if (showAddDialog) {
             AddNoteDialog(
                 viewModel = viewModel,
-                onDismiss = { showAddDialog = false },
-                onSaved = { showAddDialog = false }
+                onDismiss = { 
+                    showAddDialog = false
+                    noteToEdit = null
+                },
+                onSaved = { 
+                    showAddDialog = false
+                    noteToEdit = null
+                },
+                noteToEdit = noteToEdit
             )
         }
     }
 }
 
 @Composable
-fun NoteListScreen(viewModel: NoteViewModel, modifier: Modifier = Modifier) {
+fun NoteListScreen(
+    viewModel: NoteViewModel, 
+    modifier: Modifier = Modifier,
+    onNoteClick: (NoteWithTags) -> Unit = {}
+) {
     val notesWithTags by viewModel.allNotesWithTags.collectAsState(initial = emptyList())
     LazyColumn(modifier = modifier) {
         items(notesWithTags) { noteWithTags ->
-            NoteCard(note = noteWithTags.note, tags = noteWithTags.tags)
+            NoteCard(
+                note = noteWithTags.note, 
+                tags = noteWithTags.tags,
+                onClick = { onNoteClick(noteWithTags) }
+            )
         }
     }
 }
@@ -184,14 +213,27 @@ fun NoteListScreen(viewModel: NoteViewModel, modifier: Modifier = Modifier) {
 fun AddNoteDialog(
     viewModel: NoteViewModel,
     onDismiss: () -> Unit,
-    onSaved: () -> Unit
+    onSaved: () -> Unit,
+    noteToEdit: NoteWithTags? = null
 ) {
-    var title by remember { mutableStateOf("") }
-    var content by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf("") }
+    val isEditing = noteToEdit != null
+    
+    var title by remember { mutableStateOf(noteToEdit?.note?.title ?: "") }
+    var content by remember { mutableStateOf(noteToEdit?.note?.content ?: "") }
+    var category by remember { mutableStateOf(noteToEdit?.note?.category ?: "") }
     val allTags by viewModel.allTags.collectAsState(initial = emptyList())
     var newTagText by remember { mutableStateOf(TextFieldValue("")) }
-    var selectedTagNames by remember { mutableStateOf(setOf<String>()) }
+    var selectedTagNames by remember { 
+        mutableStateOf(noteToEdit?.tags?.map { it.name }?.toSet() ?: setOf<String>())
+    }
+
+    // Update fields when noteToEdit changes
+    LaunchedEffect(noteToEdit) {
+        title = noteToEdit?.note?.title ?: ""
+        content = noteToEdit?.note?.content ?: ""
+        category = noteToEdit?.note?.category ?: ""
+        selectedTagNames = noteToEdit?.tags?.map { it.name }?.toSet() ?: setOf()
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -199,12 +241,22 @@ fun AddNoteDialog(
             val canSave = title.isNotBlank()
             TextButton(
                 onClick = {
-                    viewModel.addNoteWithTags(
-                        title = title.trim(),
-                        content = content.trim(),
-                        category = category.trim(),
-                        selectedTagNames = selectedTagNames.toList()
-                    )
+                    if (isEditing && noteToEdit != null) {
+                        viewModel.updateNoteWithTags(
+                            noteId = noteToEdit.note.id,
+                            title = title.trim(),
+                            content = content.trim(),
+                            category = category.trim(),
+                            selectedTagNames = selectedTagNames.toList()
+                        )
+                    } else {
+                        viewModel.addNoteWithTags(
+                            title = title.trim(),
+                            content = content.trim(),
+                            category = category.trim(),
+                            selectedTagNames = selectedTagNames.toList()
+                        )
+                    }
                     onSaved()
                 },
                 enabled = canSave
@@ -213,7 +265,7 @@ fun AddNoteDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
         },
-        title = { Text("Add Note") },
+        title = { Text(if (isEditing) "Edit Note" else "Add Note") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
