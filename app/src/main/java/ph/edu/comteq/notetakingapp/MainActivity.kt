@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -137,7 +138,10 @@ fun NoteApp(viewModel: NoteViewModel) {
                                 NoteCard(
                                     note = noteWithTags.note, 
                                     tags = noteWithTags.tags,
-                                    onClick = { onNoteClick(noteWithTags) }
+                                    onClick = { onNoteClick(noteWithTags) },
+                                    onDelete = {
+                                        viewModel.delete(noteWithTags.note)
+                                    }
                                 )
                             }
                         }
@@ -202,7 +206,10 @@ fun NoteListScreen(
             NoteCard(
                 note = noteWithTags.note, 
                 tags = noteWithTags.tags,
-                onClick = { onNoteClick(noteWithTags) }
+                onClick = { onNoteClick(noteWithTags) },
+                onDelete = {
+                    viewModel.delete(noteWithTags.note)
+                }
             )
         }
     }
@@ -214,7 +221,8 @@ fun AddNoteDialog(
     viewModel: NoteViewModel,
     onDismiss: () -> Unit,
     onSaved: () -> Unit,
-    noteToEdit: NoteWithTags? = null
+    noteToEdit: NoteWithTags? = null,
+    onDelete: (() -> Unit)? = null
 ) {
     val isEditing = noteToEdit != null
     
@@ -233,6 +241,32 @@ fun AddNoteDialog(
         content = noteToEdit?.note?.content ?: ""
         category = noteToEdit?.note?.category ?: ""
         selectedTagNames = noteToEdit?.tags?.map { it.name }?.toSet() ?: setOf()
+    }
+
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
+
+    if (showDeleteConfirmation && noteToEdit != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("Delete Note") },
+            text = { Text("Are you sure you want to delete this note? This action cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.delete(noteToEdit.note)
+                        onDelete?.invoke()
+                        onSaved()
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     AlertDialog(
@@ -263,7 +297,16 @@ fun AddNoteDialog(
             ) { Text("Save") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (isEditing) {
+                    TextButton(
+                        onClick = { showDeleteConfirmation = true }
+                    ) {
+                        Text("Delete", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
         },
         title = { Text(if (isEditing) "Edit Note" else "Add Note") },
         text = {
@@ -350,13 +393,38 @@ fun NoteCard(
     note: Note,
     tags: List<Tag> = emptyList(),
     modifier: Modifier = Modifier,
-    onClick: () -> Unit = {}
+    onClick: () -> Unit = {},
+    onDelete: (() -> Unit)? = null
 ) {
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
+
+    if (showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("Delete Note") },
+            text = { Text("Are you sure you want to delete this note? This action cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDelete?.invoke()
+                        showDeleteConfirmation = false
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(8.dp)
-            .clickable { onClick() },
+            .padding(8.dp),
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -370,43 +438,67 @@ fun NoteCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
-                if (note.category.isNotEmpty()) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        shape = MaterialTheme.shapes.small
-                    ) {
-                        Text(
-                            text = note.category,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (note.category.isNotEmpty()) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            shape = MaterialTheme.shapes.small
+                        ) {
+                            Text(
+                                text = note.category,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+                    if (onDelete != null) {
+                        IconButton(
+                            onClick = { showDeleteConfirmation = true },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete note",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                 }
             }
-            Text(
-                text = note.title,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-            if (note.content.isNotEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onClick() }
+            ) {
                 Text(
-                    text = note.content,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 4.dp),
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    text = note.title,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(top = 4.dp)
                 )
-            }
-            if (tags.isNotEmpty()) {
-                FlowRow(
-                    modifier = Modifier.padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    tags.forEach { tag ->
-                        TagChip(tag = tag)
+                if (note.content.isNotEmpty()) {
+                    Text(
+                        text = note.content,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 4.dp),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                }
+                if (tags.isNotEmpty()) {
+                    FlowRow(
+                        modifier = Modifier.padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        tags.forEach { tag ->
+                            TagChip(tag = tag)
+                        }
                     }
                 }
             }

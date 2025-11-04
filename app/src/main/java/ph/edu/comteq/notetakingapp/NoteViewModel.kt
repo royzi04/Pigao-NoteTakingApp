@@ -57,6 +57,16 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun delete(note: Note) = viewModelScope.launch {
+        // Get existing tags for this note to clean up associations
+        val noteWithTags = noteDao.getNoteWithTags(note.id)
+        val existingTagIds = noteWithTags?.tags?.map { it.id }?.toSet() ?: emptySet()
+
+        // Remove all tag associations
+        existingTagIds.forEach { tagId ->
+            noteDao.deleteNoteTagCrossRef(NoteTagCrossRef(noteId = note.id, tagId = tagId))
+        }
+
+        // Delete the note
         noteDao.deleteNote(note)
     }
 
