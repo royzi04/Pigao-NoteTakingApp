@@ -27,7 +27,13 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    val allNotesWithTags: Flow<List<NoteWithTags>> = noteDao.getAllNotesWithTags()
+    val allNotesWithTags: Flow<List<NoteWithTags>> = searchQuery.flatMapLatest { query ->
+        if (query.isNotBlank()) {
+            noteDao.searchNotesWithTags(query)
+        } else {
+            noteDao.getAllNotesWithTags()
+        }
+    }
     val allCategories: Flow<List<String>> = noteDao.getAllCategories()
     val allTags: Flow<List<Tag>> = noteDao.getAllTags()
 
